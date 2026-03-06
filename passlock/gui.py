@@ -397,8 +397,8 @@ class PassLockApp(tk.Tk):
                 self._pw_history_text.insert("end", f"📄 {path}\n")
                 for e in entries:
                     ts = e.get("timestamp", "?")
-                    h = e.get("password_hash", "")[:12] + "…"
-                    self._pw_history_text.insert("end", f"   [{ts}]  hash: {h}\n")
+                    pw = e.get("password", "?")
+                    self._pw_history_text.insert("end", f"   [{ts}]  password: {pw}\n")
                 self._pw_history_text.insert("end", "\n")
         self._pw_history_text.configure(state="disabled")
 

@@ -5,7 +5,6 @@ Stores logs and password history in a JSON file inside the user's
 platform-appropriate data directory.
 """
 
-import hashlib
 import json
 import os
 import platform
@@ -103,15 +102,10 @@ def purge_old_entries(schedule: str) -> int:
     return original_count - len(kept)
 
 
-# ── Password history (hashed, per-file) ──────────────────────────────
-# We store a SHA-256 hash of the password — never the plaintext.
-
-def _hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
-
+# ── Password history (per-file) ──────────────────────────────────────
 
 def save_password_entry(target: str, password: str) -> None:
-    """Save a hashed password entry for a file/folder path."""
+    """Save a password entry for a file/folder path."""
     history = _load_json(_HISTORY_FILE)
     if not isinstance(history, dict):
         history = {}
@@ -120,10 +114,10 @@ def save_password_entry(target: str, password: str) -> None:
         history[key] = []
     entry = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "password_hash": _hash_password(password),
+        "password": password,
     }
-    # Avoid duplicate consecutive entries for the same hash
-    if not history[key] or history[key][-1]["password_hash"] != entry["password_hash"]:
+    # Avoid duplicate consecutive entries for the same password
+    if not history[key] or history[key][-1]["password"] != password:
         history[key].append(entry)
     _save_json(_HISTORY_FILE, history)
 
@@ -135,14 +129,14 @@ def get_password_history() -> dict:
 
 
 def verify_password(target: str, password: str) -> bool:
-    """Check if a password matches the latest stored hash for a target."""
+    """Check if a password matches the latest stored password for a target."""
     history = _load_json(_HISTORY_FILE)
     if not isinstance(history, dict):
         return False
     entries = history.get(str(target), [])
     if not entries:
         return False
-    return entries[-1]["password_hash"] == _hash_password(password)
+    return entries[-1]["password"] == password
 
 
 def clear_password_history() -> None:
