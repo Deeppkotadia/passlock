@@ -15,6 +15,18 @@ from passlock.core import (
     encrypt_folder,
     smart_unlock,
 )
+from passlock.logger import (
+    log_activity,
+    get_activity_log,
+    clear_activity_log,
+    save_password_entry,
+    get_password_history,
+    clear_password_history,
+    get_purge_schedule,
+    set_purge_schedule,
+    auto_purge,
+    PURGE_OPTIONS,
+)
 
 # ── Theme colours ─────────────────────────────────────────────────────
 
@@ -167,15 +179,6 @@ class PassLockApp(tk.Tk):
         ttk.Button(row, text="File…", width=7, command=self._browse_file).pack(side="left", padx=(0, 4))
         ttk.Button(row, text="Folder…", width=7, command=self._browse_folder).pack(side="left")
 
-        # ── Options ──────────────────────────────────────────────────
-        opts_frame = ttk.LabelFrame(container, text="Options", padding=10)
-        opts_frame.pack(fill="x", pady=(0, 10))
-
-        self._keep_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(opts_frame, text="Keep original after locking / unlocking", variable=self._keep_var).pack(
-            anchor="w"
-        )
-
         # ── Action buttons ───────────────────────────────────────────
         btn_frame = ttk.Frame(container)
         btn_frame.pack(fill="x", pady=(6, 10))
@@ -190,15 +193,63 @@ class PassLockApp(tk.Tk):
         self._progress = ttk.Progressbar(container, mode="indeterminate")
         self._progress.pack(fill="x", pady=(0, 6))
 
-        # ── Status log ───────────────────────────────────────────────
-        log_frame = ttk.LabelFrame(container, text="Log", padding=6)
-        log_frame.pack(fill="both", expand=True)
+        # ── Tabbed area (Status Log / Activity History / Password History / Settings) ──
+        notebook = ttk.Notebook(container)
+        notebook.pack(fill="both", expand=True, pady=(0, 4))
+
+        # Tab 1: Status log
+        log_frame = ttk.Frame(notebook, padding=6)
+        notebook.add(log_frame, text="Status")
 
         self._log = tk.Text(log_frame, height=8, wrap="word", state="disabled", font=("Courier", 10))
         scrollbar = ttk.Scrollbar(log_frame, command=self._log.yview)
         self._log.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
         self._log.pack(fill="both", expand=True)
+
+        # Tab 2: Activity history
+        activity_frame = ttk.Frame(notebook, padding=6)
+        notebook.add(activity_frame, text="Activity Log")
+
+        act_btn_row = ttk.Frame(activity_frame)
+        act_btn_row.pack(fill="x", pady=(0, 4))
+        ttk.Button(act_btn_row, text="Refresh", command=self._refresh_activity_log).pack(side="left", padx=(0, 6))
+        ttk.Button(act_btn_row, text="Clear All", command=self._clear_activity_log).pack(side="left")
+
+        self._activity_text = tk.Text(activity_frame, height=8, wrap="word", state="disabled", font=("Courier", 10))
+        act_scroll = ttk.Scrollbar(activity_frame, command=self._activity_text.yview)
+        self._activity_text.configure(yscrollcommand=act_scroll.set)
+        act_scroll.pack(side="right", fill="y")
+        self._activity_text.pack(fill="both", expand=True)
+
+        # Tab 3: Password history
+        pw_history_frame = ttk.Frame(notebook, padding=6)
+        notebook.add(pw_history_frame, text="Password History")
+
+        pw_btn_row = ttk.Frame(pw_history_frame)
+        pw_btn_row.pack(fill="x", pady=(0, 4))
+        ttk.Button(pw_btn_row, text="Refresh", command=self._refresh_pw_history).pack(side="left", padx=(0, 6))
+        ttk.Button(pw_btn_row, text="Clear All", command=self._clear_pw_history).pack(side="left")
+
+        self._pw_history_text = tk.Text(pw_history_frame, height=8, wrap="word", state="disabled", font=("Courier", 10))
+        pw_scroll = ttk.Scrollbar(pw_history_frame, command=self._pw_history_text.yview)
+        self._pw_history_text.configure(yscrollcommand=pw_scroll.set)
+        pw_scroll.pack(side="right", fill="y")
+        self._pw_history_text.pack(fill="both", expand=True)
+
+        # Tab 4: Settings (purge schedule)
+        settings_frame = ttk.Frame(notebook, padding=10)
+        notebook.add(settings_frame, text="Settings")
+
+        ttk.Label(settings_frame, text="Auto-purge activity logs:", font=("Helvetica", 11)).pack(anchor="w", pady=(0, 6))
+
+        self._purge_var = tk.StringVar(value=get_purge_schedule())
+        for label, key in [("Daily", "daily"), ("Weekly", "weekly"), ("Bi-weekly", "biweekly"), ("Monthly", "monthly"), ("Never", "never")]:
+            ttk.Radiobutton(settings_frame, text=label, variable=self._purge_var, value=key,
+                            command=self._on_purge_change).pack(anchor="w", padx=10, pady=2)
+
+        ttk.Separator(settings_frame, orient="horizontal").pack(fill="x", pady=10)
+        ttk.Button(settings_frame, text="Purge Old Logs Now", command=self._purge_now).pack(anchor="w")
 
         # OS info footer
         sys_info = f"{platform.system()} {platform.release()} • Python {platform.python_version()}"
@@ -253,21 +304,22 @@ class PassLockApp(tk.Tk):
         if dlg.result is None:
             return
         password = dlg.result
-        keep = self._keep_var.get()
-
         self._set_busy(True)
         self._log_msg(f"Locking: {target} …")
 
         def task():
             try:
                 if target.is_file():
-                    out = encrypt_file(target, password, remove_original=not keep)
+                    out = encrypt_file(target, password, remove_original=True)
                 elif target.is_dir():
-                    out = encrypt_folder(target, password, remove_original=not keep)
+                    out = encrypt_folder(target, password, remove_original=True)
                 else:
                     raise ValueError("Target is neither a file nor a directory.")
+                save_password_entry(str(target), password)
+                log_activity("Lock", str(target), f"Success → {out}")
                 self.after(0, lambda: self._on_done(f"✅ Locked → {out}"))
             except Exception as exc:
+                log_activity("Lock", str(target), f"Error: {exc}")
                 self.after(0, lambda: self._on_error(str(exc)))
 
         threading.Thread(target=task, daemon=True).start()
@@ -286,16 +338,17 @@ class PassLockApp(tk.Tk):
         if dlg.result is None:
             return
         password = dlg.result
-        keep = self._keep_var.get()
 
         self._set_busy(True)
         self._log_msg(f"Unlocking: {target} …")
 
         def task():
             try:
-                out = smart_unlock(target, password, remove_encrypted=not keep)
+                out = smart_unlock(target, password, remove_encrypted=True)
+                log_activity("Unlock", str(target), f"Success → {out}")
                 self.after(0, lambda: self._on_done(f"✅ Unlocked → {out}"))
             except Exception as exc:
+                log_activity("Unlock", str(target), f"Error: {exc}")
                 self.after(0, lambda: self._on_error(str(exc)))
 
         threading.Thread(target=task, daemon=True).start()
@@ -311,10 +364,67 @@ class PassLockApp(tk.Tk):
         self._log_msg(f"❌ Error: {msg}")
         messagebox.showerror("Error", msg)
 
+    # ── Activity log helpers ─────────────────────────────────────────
+
+    def _refresh_activity_log(self) -> None:
+        entries = get_activity_log()
+        self._activity_text.configure(state="normal")
+        self._activity_text.delete("1.0", "end")
+        if not entries:
+            self._activity_text.insert("end", "No activity recorded yet.\n")
+        else:
+            for e in reversed(entries):
+                line = f"[{e.get('timestamp', '?')}]  {e.get('action', '?')}  |  {e.get('target', '?')}  |  {e.get('result', '')}\n"
+                self._activity_text.insert("end", line)
+        self._activity_text.configure(state="disabled")
+
+    def _clear_activity_log(self) -> None:
+        if messagebox.askyesno("Clear Activity Log", "Delete all activity log entries?"):
+            clear_activity_log()
+            self._refresh_activity_log()
+            self._log_msg("Activity log cleared.")
+
+    # ── Password history helpers ─────────────────────────────────────
+
+    def _refresh_pw_history(self) -> None:
+        history = get_password_history()
+        self._pw_history_text.configure(state="normal")
+        self._pw_history_text.delete("1.0", "end")
+        if not history:
+            self._pw_history_text.insert("end", "No password history saved yet.\n")
+        else:
+            for path, entries in history.items():
+                self._pw_history_text.insert("end", f"📄 {path}\n")
+                for e in entries:
+                    ts = e.get("timestamp", "?")
+                    h = e.get("password_hash", "")[:12] + "…"
+                    self._pw_history_text.insert("end", f"   [{ts}]  hash: {h}\n")
+                self._pw_history_text.insert("end", "\n")
+        self._pw_history_text.configure(state="disabled")
+
+    def _clear_pw_history(self) -> None:
+        if messagebox.askyesno("Clear Password History", "Delete all saved password records?"):
+            clear_password_history()
+            self._refresh_pw_history()
+            self._log_msg("Password history cleared.")
+
+    # ── Settings helpers ─────────────────────────────────────────────
+
+    def _on_purge_change(self) -> None:
+        schedule = self._purge_var.get()
+        set_purge_schedule(schedule)
+        self._log_msg(f"Purge schedule set to: {schedule}")
+
+    def _purge_now(self) -> None:
+        removed = auto_purge()
+        self._log_msg(f"Purged {removed} old log entries.")
+        self._refresh_activity_log()
+
 
 # ── Entry point ──────────────────────────────────────────────────────
 
 def launch_gui() -> None:
+    auto_purge()  # purge old logs based on saved schedule
     app = PassLockApp()
     app.mainloop()
 

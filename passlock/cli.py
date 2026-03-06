@@ -8,6 +8,7 @@ from pathlib import Path
 
 from passlock import __version__
 from passlock.core import encrypt_file, encrypt_folder, smart_unlock
+from passlock.logger import log_activity, save_password_entry, auto_purge
 
 
 def _get_password_for_encrypt() -> str:
@@ -50,6 +51,8 @@ def main() -> None:
         parser.print_help()
         sys.exit(1)
 
+    auto_purge()  # purge old logs based on saved schedule
+
     if args.command == "gui":
         from passlock.gui import launch_gui
         launch_gui()
@@ -64,9 +67,13 @@ def main() -> None:
         password = _get_password_for_encrypt()
         if target.is_file():
             out = encrypt_file(target, password, remove_original=not args.keep)
+            save_password_entry(str(target), password)
+            log_activity("Lock", str(target), f"Success → {out}")
             print(f"Locked file → {out}")
         elif target.is_dir():
             out = encrypt_folder(target, password, remove_original=not args.keep)
+            save_password_entry(str(target), password)
+            log_activity("Lock", str(target), f"Success → {out}")
             print(f"Locked folder → {out}")
         else:
             print("Error: target is neither a regular file nor a directory.", file=sys.stderr)
@@ -79,8 +86,10 @@ def main() -> None:
         password = getpass.getpass("Enter password: ")
         try:
             out = smart_unlock(target, password, remove_encrypted=not args.keep)
+            log_activity("Unlock", str(target), f"Success → {out}")
             print(f"Unlocked → {out}")
         except ValueError as exc:
+            log_activity("Unlock", str(target), f"Error: {exc}")
             print(f"Error: {exc}", file=sys.stderr)
             sys.exit(1)
 

@@ -51,6 +51,7 @@ a = Analysis(
         "passlock.core",
         "passlock.cli",
         "passlock.gui",
+        "passlock.logger",
     ],
     hookspath=[],
     hooksconfig={},
