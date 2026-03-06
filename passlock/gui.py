@@ -152,10 +152,20 @@ class PassLockApp(tk.Tk):
                 style.theme_use(theme)
                 break
 
-        style.configure("Accent.TButton", font=("Helvetica", 11, "bold"))
-        style.configure("Header.TLabel", font=("Helvetica", 16, "bold"))
-        style.configure("Sub.TLabel", font=("Helvetica", 10))
+        style.configure("Accent.TButton", font=("Helvetica", 12, "bold"))
+        style.configure("Header.TLabel", font=("Helvetica", 18, "bold"))
+        style.configure("Sub.TLabel", font=("Helvetica", 11))
         style.configure("Status.TLabel", font=("Helvetica", 10))
+        style.configure("CardHeader.TLabel", font=("Helvetica", 13, "bold"))
+        style.configure("TabInfo.TLabel", font=("Helvetica", 11), foreground="#6b7280")
+
+        # Treeview styling for tables
+        style.configure("Log.Treeview", font=("Helvetica", 11), rowheight=28)
+        style.configure("Log.Treeview.Heading", font=("Helvetica", 11, "bold"))
+        style.configure("Activity.Treeview", font=("Helvetica", 11), rowheight=30)
+        style.configure("Activity.Treeview.Heading", font=("Helvetica", 11, "bold"))
+        style.configure("PwHist.Treeview", font=("Helvetica", 11), rowheight=30)
+        style.configure("PwHist.Treeview.Heading", font=("Helvetica", 11, "bold"))
 
         self._build_ui()
 
@@ -201,63 +211,123 @@ class PassLockApp(tk.Tk):
         self._progress = ttk.Progressbar(container, mode="indeterminate")
         self._progress.pack(fill="x", pady=(0, 6))
 
-        # ── Tabbed area (Status Log / Activity History / Password History / Settings) ──
+        # ── Tabbed area ────────────────────────────────────────────────
         notebook = ttk.Notebook(container)
         notebook.pack(fill="both", expand=True, pady=(0, 4))
 
-        # Tab 1: Status log
-        log_frame = ttk.Frame(notebook, padding=6)
-        notebook.add(log_frame, text="Status")
+        # ── Tab 1: Status log ────────────────────────────────────────
+        log_tab = ttk.Frame(notebook, padding=10)
+        notebook.add(log_tab, text="  Status  ")
 
-        self._log = tk.Text(log_frame, height=8, wrap="word", state="disabled", font=("Courier", 10))
-        scrollbar = ttk.Scrollbar(log_frame, command=self._log.yview)
-        self._log.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side="right", fill="y")
-        self._log.pack(fill="both", expand=True)
+        ttk.Label(log_tab, text="Live Status", style="CardHeader.TLabel").pack(anchor="w", pady=(0, 2))
+        ttk.Label(log_tab, text="Real-time status of lock/unlock operations", style="TabInfo.TLabel").pack(anchor="w", pady=(0, 8))
 
-        # Tab 2: Activity history
-        activity_frame = ttk.Frame(notebook, padding=6)
-        notebook.add(activity_frame, text="Activity Log")
+        log_cols = ("time", "message")
+        self._log_tree = ttk.Treeview(log_tab, columns=log_cols, show="headings", style="Log.Treeview", height=10)
+        self._log_tree.heading("time", text="Time", anchor="w")
+        self._log_tree.heading("message", text="Message", anchor="w")
+        self._log_tree.column("time", width=160, minwidth=140, stretch=False)
+        self._log_tree.column("message", width=600, minwidth=300, stretch=True)
 
-        act_btn_row = ttk.Frame(activity_frame)
-        act_btn_row.pack(fill="x", pady=(0, 4))
-        ttk.Button(act_btn_row, text="Refresh", command=self._refresh_activity_log).pack(side="left", padx=(0, 6))
-        ttk.Button(act_btn_row, text="Clear All", command=self._clear_activity_log).pack(side="left")
+        log_scroll = ttk.Scrollbar(log_tab, orient="vertical", command=self._log_tree.yview)
+        self._log_tree.configure(yscrollcommand=log_scroll.set)
+        self._log_tree.pack(side="left", fill="both", expand=True)
+        log_scroll.pack(side="right", fill="y")
 
-        self._activity_text = tk.Text(activity_frame, height=8, wrap="word", state="disabled", font=("Courier", 10))
-        act_scroll = ttk.Scrollbar(activity_frame, command=self._activity_text.yview)
-        self._activity_text.configure(yscrollcommand=act_scroll.set)
+        # Tag colors for status messages
+        self._log_tree.tag_configure("success", foreground="#16a34a")
+        self._log_tree.tag_configure("error", foreground="#dc2626")
+        self._log_tree.tag_configure("info", foreground="#2563eb")
+
+        # ── Tab 2: Activity Log ──────────────────────────────────────
+        activity_tab = ttk.Frame(notebook, padding=10)
+        notebook.add(activity_tab, text="  Activity Log  ")
+
+        act_header = ttk.Frame(activity_tab)
+        act_header.pack(fill="x", pady=(0, 8))
+
+        ttk.Label(act_header, text="Activity History", style="CardHeader.TLabel").pack(side="left")
+        ttk.Button(act_header, text="Clear All", command=self._clear_activity_log).pack(side="right", padx=(6, 0))
+        ttk.Button(act_header, text="⟳ Refresh", command=self._refresh_activity_log).pack(side="right")
+
+        ttk.Label(activity_tab, text="Complete history of all lock and unlock operations", style="TabInfo.TLabel").pack(anchor="w", pady=(0, 6))
+
+        act_cols = ("timestamp", "action", "target", "result")
+        self._activity_tree = ttk.Treeview(activity_tab, columns=act_cols, show="headings", style="Activity.Treeview", height=12)
+        self._activity_tree.heading("timestamp", text="Date & Time", anchor="w")
+        self._activity_tree.heading("action", text="Action", anchor="center")
+        self._activity_tree.heading("target", text="File / Folder", anchor="w")
+        self._activity_tree.heading("result", text="Result", anchor="w")
+        self._activity_tree.column("timestamp", width=170, minwidth=150, stretch=False)
+        self._activity_tree.column("action", width=80, minwidth=70, stretch=False, anchor="center")
+        self._activity_tree.column("target", width=350, minwidth=200, stretch=True)
+        self._activity_tree.column("result", width=300, minwidth=150, stretch=True)
+
+        self._activity_tree.tag_configure("lock", foreground="#2563eb")
+        self._activity_tree.tag_configure("unlock", foreground="#16a34a")
+        self._activity_tree.tag_configure("error_row", foreground="#dc2626")
+
+        act_scroll = ttk.Scrollbar(activity_tab, orient="vertical", command=self._activity_tree.yview)
+        self._activity_tree.configure(yscrollcommand=act_scroll.set)
+        self._activity_tree.pack(side="left", fill="both", expand=True)
         act_scroll.pack(side="right", fill="y")
-        self._activity_text.pack(fill="both", expand=True)
 
-        # Tab 3: Password history
-        pw_history_frame = ttk.Frame(notebook, padding=6)
-        notebook.add(pw_history_frame, text="Password History")
+        # ── Tab 3: Password History ──────────────────────────────────
+        pw_tab = ttk.Frame(notebook, padding=10)
+        notebook.add(pw_tab, text="  Password History  ")
 
-        pw_btn_row = ttk.Frame(pw_history_frame)
-        pw_btn_row.pack(fill="x", pady=(0, 4))
-        ttk.Button(pw_btn_row, text="Refresh", command=self._refresh_pw_history).pack(side="left", padx=(0, 6))
-        ttk.Button(pw_btn_row, text="Clear All", command=self._clear_pw_history).pack(side="left")
+        pw_header = ttk.Frame(pw_tab)
+        pw_header.pack(fill="x", pady=(0, 8))
 
-        self._pw_history_text = tk.Text(pw_history_frame, height=8, wrap="word", state="disabled", font=("Courier", 10))
-        pw_scroll = ttk.Scrollbar(pw_history_frame, command=self._pw_history_text.yview)
-        self._pw_history_text.configure(yscrollcommand=pw_scroll.set)
+        ttk.Label(pw_header, text="Saved Passwords", style="CardHeader.TLabel").pack(side="left")
+        ttk.Button(pw_header, text="Clear All", command=self._clear_pw_history).pack(side="right", padx=(6, 0))
+        ttk.Button(pw_header, text="⟳ Refresh", command=self._refresh_pw_history).pack(side="right")
+
+        ttk.Label(pw_tab, text="Passwords used for each file and folder", style="TabInfo.TLabel").pack(anchor="w", pady=(0, 6))
+
+        pw_cols = ("file", "timestamp", "password")
+        self._pw_tree = ttk.Treeview(pw_tab, columns=pw_cols, show="headings", style="PwHist.Treeview", height=12)
+        self._pw_tree.heading("file", text="File / Folder", anchor="w")
+        self._pw_tree.heading("timestamp", text="Date & Time", anchor="w")
+        self._pw_tree.heading("password", text="Password", anchor="w")
+        self._pw_tree.column("file", width=380, minwidth=200, stretch=True)
+        self._pw_tree.column("timestamp", width=170, minwidth=150, stretch=False)
+        self._pw_tree.column("password", width=200, minwidth=120, stretch=True)
+
+        pw_scroll = ttk.Scrollbar(pw_tab, orient="vertical", command=self._pw_tree.yview)
+        self._pw_tree.configure(yscrollcommand=pw_scroll.set)
+        self._pw_tree.pack(side="left", fill="both", expand=True)
         pw_scroll.pack(side="right", fill="y")
-        self._pw_history_text.pack(fill="both", expand=True)
 
-        # Tab 4: Settings (purge schedule)
-        settings_frame = ttk.Frame(notebook, padding=10)
-        notebook.add(settings_frame, text="Settings")
+        # ── Tab 4: Settings ──────────────────────────────────────────
+        settings_tab = ttk.Frame(notebook, padding=16)
+        notebook.add(settings_tab, text="  Settings  ")
 
-        ttk.Label(settings_frame, text="Auto-purge activity logs:", font=("Helvetica", 11)).pack(anchor="w", pady=(0, 6))
+        ttk.Label(settings_tab, text="Settings", style="CardHeader.TLabel").pack(anchor="w", pady=(0, 4))
+        ttk.Label(settings_tab, text="Configure auto-purge schedule for activity logs", style="TabInfo.TLabel").pack(anchor="w", pady=(0, 16))
+
+        # Purge schedule card
+        purge_card = ttk.LabelFrame(settings_tab, text="  Auto-Purge Schedule  ", padding=16)
+        purge_card.pack(fill="x", pady=(0, 16))
+
+        ttk.Label(purge_card, text="Automatically delete activity log entries older than:", font=("Helvetica", 11)).pack(anchor="w", pady=(0, 10))
 
         self._purge_var = tk.StringVar(value=get_purge_schedule())
-        for label, key in [("Daily", "daily"), ("Weekly", "weekly"), ("Bi-weekly", "biweekly"), ("Monthly", "monthly"), ("Never", "never")]:
-            ttk.Radiobutton(settings_frame, text=label, variable=self._purge_var, value=key,
-                            command=self._on_purge_change).pack(anchor="w", padx=10, pady=2)
+        purge_grid = ttk.Frame(purge_card)
+        purge_grid.pack(anchor="w", padx=8)
+        for i, (label, key) in enumerate([("Daily (1 day)", "daily"), ("Weekly (7 days)", "weekly"), ("Bi-weekly (14 days)", "biweekly"), ("Monthly (30 days)", "monthly"), ("Never", "never")]):
+            ttk.Radiobutton(purge_grid, text=label, variable=self._purge_var, value=key,
+                            command=self._on_purge_change).grid(row=i, column=0, sticky="w", pady=4, padx=4)
 
-        ttk.Separator(settings_frame, orient="horizontal").pack(fill="x", pady=10)
-        ttk.Button(settings_frame, text="Purge Old Logs Now", command=self._purge_now).pack(anchor="w")
+        # Manual purge card
+        manual_card = ttk.LabelFrame(settings_tab, text="  Manual Actions  ", padding=16)
+        manual_card.pack(fill="x", pady=(0, 16))
+
+        purge_btn_row = ttk.Frame(manual_card)
+        purge_btn_row.pack(fill="x")
+        ttk.Button(purge_btn_row, text="🗑  Purge Old Logs Now", command=self._purge_now).pack(side="left", padx=(0, 12))
+        self._purge_status = ttk.Label(purge_btn_row, text="", style="TabInfo.TLabel")
+        self._purge_status.pack(side="left")
 
         # OS info footer
         sys_info = f"{platform.system()} {platform.release()} • Python {platform.python_version()}"
@@ -266,10 +336,18 @@ class PassLockApp(tk.Tk):
     # ── Helpers ──────────────────────────────────────────────────────
 
     def _log_msg(self, msg: str) -> None:
-        self._log.configure(state="normal")
-        self._log.insert("end", msg + "\n")
-        self._log.see("end")
-        self._log.configure(state="disabled")
+        from datetime import datetime
+        now = datetime.now().strftime("%H:%M:%S")
+        tag = "info"
+        if "✅" in msg or "Success" in msg:
+            tag = "success"
+        elif "❌" in msg or "Error" in msg:
+            tag = "error"
+        self._log_tree.insert("", "end", values=(now, msg), tags=(tag,))
+        # Auto-scroll to latest
+        children = self._log_tree.get_children()
+        if children:
+            self._log_tree.see(children[-1])
 
     def _set_busy(self, busy: bool) -> None:
         state = "disabled" if busy else "normal"
@@ -375,16 +453,25 @@ class PassLockApp(tk.Tk):
     # ── Activity log helpers ─────────────────────────────────────────
 
     def _refresh_activity_log(self) -> None:
+        # Clear existing rows
+        for item in self._activity_tree.get_children():
+            self._activity_tree.delete(item)
         entries = get_activity_log()
-        self._activity_text.configure(state="normal")
-        self._activity_text.delete("1.0", "end")
         if not entries:
-            self._activity_text.insert("end", "No activity recorded yet.\n")
+            self._activity_tree.insert("", "end", values=("—", "—", "No activity recorded yet", "—"))
         else:
             for e in reversed(entries):
-                line = f"[{e.get('timestamp', '?')}]  {e.get('action', '?')}  |  {e.get('target', '?')}  |  {e.get('result', '')}\n"
-                self._activity_text.insert("end", line)
-        self._activity_text.configure(state="disabled")
+                action = e.get("action", "?")
+                result = e.get("result", "")
+                tag = "lock" if action == "Lock" else "unlock"
+                if "Error" in result:
+                    tag = "error_row"
+                self._activity_tree.insert("", "end", values=(
+                    e.get("timestamp", "?"),
+                    f"🔐 {action}" if action == "Lock" else f"🔓 {action}",
+                    e.get("target", "?"),
+                    result,
+                ), tags=(tag,))
 
     def _clear_activity_log(self) -> None:
         if messagebox.askyesno("Clear Activity Log", "Delete all activity log entries?"):
@@ -395,20 +482,19 @@ class PassLockApp(tk.Tk):
     # ── Password history helpers ─────────────────────────────────────
 
     def _refresh_pw_history(self) -> None:
+        for item in self._pw_tree.get_children():
+            self._pw_tree.delete(item)
         history = get_password_history()
-        self._pw_history_text.configure(state="normal")
-        self._pw_history_text.delete("1.0", "end")
         if not history:
-            self._pw_history_text.insert("end", "No password history saved yet.\n")
+            self._pw_tree.insert("", "end", values=("No password history saved yet", "—", "—"))
         else:
             for path, entries in history.items():
-                self._pw_history_text.insert("end", f"📄 {path}\n")
                 for e in entries:
-                    ts = e.get("timestamp", "?")
-                    pw = e.get("password", "?")
-                    self._pw_history_text.insert("end", f"   [{ts}]  password: {pw}\n")
-                self._pw_history_text.insert("end", "\n")
-        self._pw_history_text.configure(state="disabled")
+                    self._pw_tree.insert("", "end", values=(
+                        path,
+                        e.get("timestamp", "?"),
+                        e.get("password", "?"),
+                    ))
 
     def _clear_pw_history(self) -> None:
         if messagebox.askyesno("Clear Password History", "Delete all saved password records?"):
@@ -422,10 +508,12 @@ class PassLockApp(tk.Tk):
         schedule = self._purge_var.get()
         set_purge_schedule(schedule)
         self._log_msg(f"Purge schedule set to: {schedule}")
+        self._purge_status.configure(text=f"✓ Schedule saved: {schedule}", foreground="#16a34a")
 
     def _purge_now(self) -> None:
         removed = auto_purge()
         self._log_msg(f"Purged {removed} old log entries.")
+        self._purge_status.configure(text=f"✓ Purged {removed} entries", foreground="#16a34a")
         self._refresh_activity_log()
 
 
