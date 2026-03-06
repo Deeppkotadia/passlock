@@ -131,9 +131,17 @@ class PassLockApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title(f"{__app_name__} v{__version__}")
-        self.geometry("540x480")
         self.minsize(460, 420)
         _apply_os_tweaks(self)
+
+        # Maximize window on launch
+        system = platform.system()
+        if system == "Darwin":
+            self.state("zoomed")
+        elif system == "Windows":
+            self.state("zoomed")
+        else:
+            self.attributes("-zoomed", True)
 
         # Style
         style = ttk.Style(self)
