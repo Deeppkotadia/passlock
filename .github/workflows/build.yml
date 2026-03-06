@@ -1,0 +1,100 @@
+name: Build & Release PassLock
+
+on:
+  push:
+    tags:
+      - "v*"          # Triggered when you push a tag like v1.0.0
+  workflow_dispatch:   # Allows manual trigger from GitHub UI
+
+permissions:
+  contents: write      # Needed to create GitHub Releases
+
+jobs:
+  # ── macOS Build ───────────────────────────────────────────────────
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: pyinstaller passlock.spec --clean --noconfirm
+
+      - name: Create DMG
+        run: |
+          mkdir -p dist/dmg_staging
+          cp -R dist/PassLock.app dist/dmg_staging/
+          ln -sf /Applications dist/dmg_staging/Applications
+          hdiutil create -volname "PassLock" -srcfolder dist/dmg_staging \
+            -ov -format UDZO dist/PassLock-1.0.0-macOS.dmg
+          rm -rf dist/dmg_staging
+
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: PassLock-macOS-DMG
+          path: dist/PassLock-1.0.0-macOS.dmg
+
+  # ── Windows Build ─────────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: pyinstaller passlock.spec --clean --noconfirm
+
+      - name: Create Windows Installer (Inno Setup)
+        run: |
+          iscc installer_win.iss
+
+      - name: Upload Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: PassLock-Windows-EXE
+          path: dist/PassLock.exe
+
+      - name: Upload Windows Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: PassLock-Windows-Installer
+          path: installer/PassLock-Setup-1.0.0-Windows.exe
+
+  # ── GitHub Release (only on tag push) ─────────────────────────────
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/PassLock-macOS-DMG/PassLock-1.0.0-macOS.dmg
+            artifacts/PassLock-Windows-EXE/PassLock.exe
+            artifacts/PassLock-Windows-Installer/PassLock-Setup-1.0.0-Windows.exe
+          generate_release_notes: true
